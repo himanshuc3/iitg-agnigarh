@@ -5,38 +5,51 @@ package callbacks
 
 import (
 	"fmt"
-	"net/url"
-	"github.com/gocolly/colly/v2"
 	"net/http"
+	"net/url"
+	"time"
+
+	"github.com/gocolly/colly"
 	"github.com/iitg-agnigarh/utils"
 	"github.com/spf13/cobra"
 )
 
-func scrapeMagicNumber(){
-	c := colly.NewCollector()
+const MAX_ELAPSED_TIME = 2 * time.Minute
 
-	c.OnHTML("input[name='magic']", func(e *colly.HTMLElement){
-		magicNumber := e.Attr("value")
-		loginToFirewall(magicNumber)
-	})
+func scrapeDomain() {
 
-	c.OnError(func(_ *colly.Response, err error) {
-		
-		fmt.Println(err)
-	})
+	scraper := colly.NewCollector()
+	backoffHandler := utils.NewExponentialBackoff()
 
-	c.Visit(utils.LoginUrl)
+	scraping := func() {
 
+		scraper.OnHTML("input[name='magic']", func(e *colly.HTMLElement) {
+			magicNumber := e.Attr("value")
+			loginToFirewall(magicNumber)
+		})
+
+		scraper.OnError(func(r *colly.Response, err error) {
+			fmt.Println("Failed attempt")
+			fmt.Println(err)
+			fmt.Println("Before sleep")
+			time.Sleep(backoffHandler.NextBackoff())
+			fmt.Println("After sleep")
+			r.Request.Retry()
+		})
+
+		scraper.Visit(utils.LoginUrl)
+
+	}
+	scraping()
 }
 
-func loginToFirewall(magicNumber string){
+func loginToFirewall(magicNumber string) {
 
 	data := url.Values{
 		"username": {"c.himanshu"},
 		"password": {"amphion&Z3thus"},
-		"magic": {magicNumber},
-		"4Tredir": {utils.LoginUrl}}
-
+		"magic":    {magicNumber},
+		"4Tredir":  {utils.LoginUrl}}
 
 	response, err := http.PostForm(utils.BaseUrl, data)
 
@@ -49,11 +62,11 @@ func loginToFirewall(magicNumber string){
 	defer response.Body.Close()
 
 	fmt.Println(response)
-	return
-
+	fmt.Println("Successfully connected to domain")
 }
 
-func Connect(cmd *cobra.Command, args []string){
+func Connect(cmd *cobra.Command, args []string) {
 	fmt.Println("Connecting to ", utils.BaseUrl)
-	scrapeMagicNumber()
+
+	scrapeDomain()
 }
